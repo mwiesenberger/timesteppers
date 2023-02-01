@@ -89,7 +89,7 @@ struct ImplicitSolver
     }
     std::array<double,2> copyable(){ return {0,0};}
     // y + alpha I(t,y) = rhs
-    void solve( double alpha, const Implicit& im, double t, std::array<double,2>& y, const std::array<double,2>& rhs)
+    void operator()( double alpha, double t, std::array<double,2>& y, const std::array<double,2>& rhs)
     {
         solve_counter++;
         y[0] = rhs[0];
@@ -278,33 +278,30 @@ int main( int argc, char* argv[])
     equations::ImplicitSolver solver( ex, eps_time);
 
     dg::Adaptive<dg::ERKStep< std::array<double,2> >> adaptive;
-    dg::Adaptive<dg::ARKStep< std::array<double,2>, equations::ImplicitSolver>> adaptive_imex;
-    dg::Adaptive<dg::DIRKStep<std::array<double,2>, equations::ImplicitSolver>> adaptive_implicit;
+    dg::Adaptive<dg::ARKStep< std::array<double,2>>> adaptive_imex;
+    dg::Adaptive<dg::DIRKStep<std::array<double,2>>> adaptive_implicit;
     if( type == "adaptive")
         adaptive.construct( tableau, y0);
     else if( type == "adaptive-imex")
-        adaptive_imex.construct( tableau, solver);
+        adaptive_imex.construct( tableau, y0);
     else if( type == "adaptive-implicit")
-        adaptive_implicit.construct( tableau, solver);
+        adaptive_implicit.construct( tableau, y0);
     else
         throw std::runtime_error( "Timestepper type "+type+" not recognized\n");
-    adaptive.set_reject_limit(reject_limit);
-    adaptive_imex.set_reject_limit(reject_limit);
-    adaptive_implicit.set_reject_limit(reject_limit);
     std::string controller = js["timestepper"].get( "controller", "pid-control").asString();
-    std::function< double( double,double,double,double,double,double,unsigned,unsigned)> control;
+    std::function< double( std::array<double,3>,std::array<double,3>,unsigned,unsigned)> control;
     if( controller == "i-control")
-        control = dg::i_control<double>;
+        control = dg::i_control;
     else if( controller == "pi-control")
-        control = dg::pi_control<double>;
+        control = dg::pi_control;
     else if( controller == "pid-control")
-        control = dg::pid_control<double>;
+        control = dg::pid_control;
     else if( controller == "ex-control")
-        control = dg::ex_control<double>;
+        control = dg::ex_control;
     else if( controller == "im-control")
-        control = dg::im_control<double>;
+        control = dg::im_control;
     else if( controller == "imex-control")
-        control = dg::imex_control<double>;
+        control = dg::imex_control;
     else
         throw std::runtime_error( "Controller "+controller+" not recognized\n");
 
@@ -381,23 +378,23 @@ int main( int argc, char* argv[])
         if( type == "adaptive")
         {
             adaptive.step( ex, time, y0, time, y0, dt,
-                control, equations::l2norm, rtol, atol);
+                control, equations::l2norm, rtol, atol,reject_limit);
             var.eps0 = adaptive.get_error();
             if( adaptive.failed())
                 var.nfailed++;
         }
         else if( type == "adaptive-imex")
         {
-            adaptive_imex.step( ex, im, time, y0, time, y0, dt,
-                control, equations::l2norm, rtol, atol);
+            adaptive_imex.step( std::tie(ex, im, solver), time, y0, time, y0, dt,
+                control, equations::l2norm, rtol, atol,reject_limit);
             var.eps0 = adaptive_imex.get_error();
             if( adaptive_imex.failed())
                 var.nfailed++;
         }
         else if( type == "adaptive-implicit")
         {
-            adaptive_implicit.step( ex, time, y0, time, y0, dt,
-                control, equations::l2norm, rtol, atol);
+            adaptive_implicit.step( std::tie( im, solver), time, y0, time, y0, dt,
+                control, equations::l2norm, rtol, atol,reject_limit);
             var.eps0 = adaptive_implicit.get_error();
             if( adaptive_implicit.failed())
                 var.nfailed++;
